@@ -11,14 +11,19 @@ import (
 	"os"
 )
 
-var salt = []byte{0x28, 0xc8, 0xf2, 0x58, 0xf2, 0xa7, 0x6a, 0xad, 0x7b}
-
+// encrypts byte slice with a pass
 func encrypt(plaintext []byte) ([]byte, error) {
+	// Generate random salt for KDF
+	var salt = make([]byte, 8)
+	if _, err := io.ReadFull(rand.Reader, salt[:]); err != nil {
+		panic(err)
+	}
 	// Derive key with scrypt
 	secretKeyBytes, err := scrypt.Key([]byte("some password"), salt, 1<<15, 8, 1, 32)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(len(secretKeyBytes))
 	var secretKey [32]byte
 	copy(secretKey[:], secretKeyBytes)
 	// encode it to hex
@@ -30,19 +35,26 @@ func encrypt(plaintext []byte) ([]byte, error) {
 		panic(err)
 	}
 	encrypted := secretbox.Seal(nonce[:], plaintext, &nonce, &secretKey)
+	// Add the salt at the beginning of the message:
+	encrypted = append(salt, encrypted...)
 	return encrypted, nil
 }
 
+// Decrypts a slice of bytes
 func decrypt(cipherText []byte) ([]byte, error) {
-	secretKeyBytes, err := scrypt.Key([]byte("some password"), salt, 1<<15, 8, 1, 32)
+	// First 8 bytes of cyphertext is salt
+	var msgSalt = make([]byte, 8)
+	copy(msgSalt[:], cipherText[:8])
+	secretKeyBytes, err := scrypt.Key([]byte("some password"), msgSalt, 1<<15, 8, 1, 32)
 	if err != nil {
 		panic(err)
 	}
 	var secretKey [32]byte
 	copy(secretKey[:], secretKeyBytes)
 	var decryptNonce [24]byte
-	copy(decryptNonce[:], cipherText[:24])
-	decrypted, ok := secretbox.Open(nil, cipherText[24:], &decryptNonce, &secretKey)
+	// First 24 following is nonce
+	copy(decryptNonce[:], cipherText[8:(8+24)])
+	decrypted, ok := secretbox.Open(nil, cipherText[(8+24):], &decryptNonce, &secretKey)
 	if !ok {
 		panic("decryption error")
 	}
