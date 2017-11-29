@@ -1,4 +1,4 @@
-# Simplecrypt
+# Derpcipher
 
 Simple private key encryption tool for small files. It uses Golang version of NaCL SecretBox.
 
