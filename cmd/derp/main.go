@@ -1,23 +1,27 @@
 package main
 
 import (
-	"context"
+	"bufio"
+	"errors"
 	"flag"
 	"fmt"
-	_ "github.com/adrpino/derpcipher"
+	derp "github.com/adrpino/derpcipher"
+	"golang.org/x/crypto/ssh/terminal"
 	"io"
+	"log"
 	"os"
 	"strings"
+	"syscall"
 )
 
+// Interface that commands should satisfy
 type command interface {
-	Name() string      // "foobar"
-	Args() string      // "<baz> [quux...]"
-	ShortHelp() string // "Foo the first bar"
-	LongHelp() string  // "Foo the first bar meeting the following conditions..."
-	//	Register(*flag.FlagSet) // command-specific flags
-	Hidden() bool // indicates whether the command should be hidden from help output
-	Run(*context.Context, []string) error
+	Name() string           // "foobar"
+	Args() string           // "<baz> [quux...]"
+	ShortHelp() string      // "Foo the first bar"
+	LongHelp() string       // "Foo the first bar meeting the following conditions..."
+	Register(*flag.FlagSet) // command-specific flags
+	Run([]string) error
 }
 
 func main() {
@@ -57,24 +61,36 @@ func (c *Config) Run() int {
 
 	cmdName, printCmdUsage, exit := parseArgs(c.Args)
 	if exit {
-		fmt.Println("i'm exiting")
 		usage(c.Stderr)
 		return 1
 	}
 	if printCmdUsage {
 		fmt.Println("Hi! i'm printing a command help")
 	}
+	outLogger := log.New(c.Stdout, "", 0)
+	_ = outLogger
+
+	errLogger := log.New(c.Stderr, "", 0)
 	// iterate over commands
 	for _, cmd := range commands {
 		if cmd.Name() == cmdName {
 			// Build flag set with global flags in there.
 			fs := flag.NewFlagSet(cmdName, flag.ContinueOnError)
 			fs.SetOutput(c.Stderr)
-			//verbose := fs.Bool("v", false, "enable verbose logging")
+			verbose := fs.Bool("v", false, "enable verbose logging")
+			_ = verbose
 
 			// Register the subcommand flags in there, too.
-			//			cmd.Register(fs)
-			fmt.Println("i'm using command %v", cmdName)
+			cmd.Register(fs)
+			if printCmdUsage {
+				fs.Usage()
+				return 1
+			}
+
+			if err := cmd.Run(fs.Args()); err != nil {
+				errLogger.Printf("%v\n", err)
+				return 1
+			}
 
 		}
 	}
@@ -82,13 +98,14 @@ func (c *Config) Run() int {
 	return 0
 }
 
+// Parses args
 func parseArgs(args []string) (cmdName string, printCmdUsage bool, exit bool) {
-	fmt.Println("received", len(args), "arguments", args)
 	isHelpArg := func() bool {
 		return strings.Contains(strings.ToLower(args[1]), "help") || strings.ToLower(args[1]) == "-h"
 	}
 
 	switch len(args) {
+	// No arguments provided
 	case 0, 1:
 		exit = true
 	case 2:
@@ -96,6 +113,7 @@ func parseArgs(args []string) (cmdName string, printCmdUsage bool, exit bool) {
 			exit = true
 		} else {
 			cmdName = args[1]
+			exit = false
 		}
 	default:
 		if isHelpArg() {
@@ -108,27 +126,63 @@ func parseArgs(args []string) (cmdName string, printCmdUsage bool, exit bool) {
 	return cmdName, printCmdUsage, exit
 }
 
+// type that includes basic info of command
 type encryptCommand struct {
+	asText   bool
+	fromFile string
+	password string
+	toFile   string
 }
 
 func (cmd *encryptCommand) Name() string { return "cipher" }
-func (cmd *encryptCommand) Args() string { return "[root]" }
+func (cmd *encryptCommand) Args() string { return "lol" }
 
 const encryptShortHelp = `Encrypts from files or stdin.`
 const encryptLongHelp = `Someday I'll write this.`
 
-func (cmd *encryptCommand) Hidden() bool      { return false }
 func (cmd *encryptCommand) ShortHelp() string { return encryptShortHelp }
 func (cmd *encryptCommand) LongHelp() string  { return encryptLongHelp }
 
-//func (cmd *encryptCommand) Register(fs *flag.FlagSet) {
-//	fs.BoolVar(&cmd.noExamples, "no-examples", false, "don't include example in Gopkg.toml")
-//	fs.BoolVar(&cmd.skipTools, "skip-tools", false, "skip importing configuration from other dependency managers")
-//	fs.BoolVar(&cmd.gopath, "gopath", false, "search in GOPATH for dependencies")
-//}
+// Register command-specific flags
+func (cmd *encryptCommand) Register(fs *flag.FlagSet) {
+	fs.BoolVar(&cmd.asText, "armor", true, "produce a text as output")
+	fs.StringVar(&cmd.fromFile, "f", "", "reads text from file")
+	fs.StringVar(&cmd.password, "p", "", "password")
+	fs.StringVar(&cmd.toFile, "o", "", "writes to file")
+}
 
-func (cmd *encryptCommand) Run(ctx *context.Context, args []string) error {
-	fmt.Println("hi there!")
+func (cmd *encryptCommand) Run(args []string) error {
+	if len(args) > 2 {
+		return fmt.Errorf("too many args (%d)", len(args))
+	}
+	fmt.Println("I'm running an encrypt command")
+	// empty input file: Read from stdin
+	var text string
+	if cmd.fromFile == "" {
+		fmt.Print("Enter text to encrypt: ")
+		reader := bufio.NewReader(os.Stdin)
+		var err error
+		text, err = reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+	}
+	// no password provided
+	if cmd.password == "" {
+		fmt.Print("Enter Password: ")
+		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+		if err == nil {
+			fmt.Println("\nPassword typed: " + string(bytePassword))
+		}
+		cipherText, err := derp.Encrypt([]byte(text), string(bytePassword))
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(cipherText))
+	}
+	if cmd.toFile != "" {
+		return errors.New("writing to file is not implemented")
+	}
 	return nil
 
 }
