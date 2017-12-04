@@ -1,18 +1,22 @@
 package derpcipher
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/scrypt"
 	"io"
 	"os"
 )
 
+type cipherText struct {
+	salt    []byte
+	nonce   [24]byte
+	content []byte
+}
+
 // encrypts byte slice with a pass
-func encrypt(plainText []byte, pass string) ([]byte, error) {
+func Encrypt(plainText []byte, pass string) ([]byte, error) {
 	// Generate random salt for KDF
 	var salt = make([]byte, 8)
 	if _, err := io.ReadFull(rand.Reader, salt[:]); err != nil {
@@ -40,7 +44,7 @@ func encrypt(plainText []byte, pass string) ([]byte, error) {
 }
 
 // Decrypts a slice of bytes
-func decrypt(cipherText []byte, pass string) ([]byte, error) {
+func Decrypt(cipherText []byte, pass string) ([]byte, error) {
 	// First 8 bytes of cyphertext is salt
 	var msgSalt = make([]byte, 8)
 	copy(msgSalt[:], cipherText[:8])
@@ -60,16 +64,21 @@ func decrypt(cipherText []byte, pass string) ([]byte, error) {
 	return decrypted, nil
 }
 
-func main() {
-	fmt.Print("Enter text: ")
-	reader := bufio.NewReader(os.Stdin)
-	text, _ := reader.ReadString('\n')
-	encrypted, err := encrypt([]byte(text), "some password")
-	fmt.Println("Ciphertext:", string(encrypted))
-
-	decrypted, err := decrypt(encrypted, "some password")
+// writes ciphertext to file
+func toFile(cipherText []byte, filename string, asText bool) error {
+	if filename == "" {
+		panic("Cannot write to an empty path")
+	}
+	f, err := os.Create(filename)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Plaintext:", string(decrypted))
+	defer f.Close()
+	var encoded string
+	if asText {
+		encoded = hex.EncodeToString(cipherText)
+		f.WriteString(encoded)
+	}
+	return nil
+
 }
