@@ -5,11 +5,15 @@ Basic structure of the CLI is a shameless copy from [dep](https://github.com/gol
 
 ### Installation
 
-	`go get github.com/adrpino/derpcipher`
+	go get github.com/adrpino/derpcipher
 
 ### Usage
+Interactive (asks for text and password)
 
-	derp cipher <stdin>
+
+	derp cipher
+
+
 
 ### TODO
 - Implement `decipher` command

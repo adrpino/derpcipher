@@ -2,45 +2,61 @@ package derpcipher
 
 import (
 	"crypto/rand"
-	"encoding/hex"
+	"encoding/base64"
 	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/scrypt"
 	"io"
 	"os"
 )
 
-type cipherText struct {
-	salt    []byte
-	nonce   [24]byte
-	content []byte
+type EncryptedObject struct {
+	kdfSalt    []byte
+	encrNonce  [24]byte
+	cipherText []byte
 }
 
-// encrypts byte slice with a pass
-func Encrypt(plainText []byte, pass string) ([]byte, error) {
+func (e *EncryptedObject) CipherText() []byte {
+	return e.cipherText
+}
+
+func NewEncryptedObject() *EncryptedObject {
 	// Generate random salt for KDF
 	var salt = make([]byte, 8)
 	if _, err := io.ReadFull(rand.Reader, salt[:]); err != nil {
 		panic(err)
 	}
-	// Derive key with scrypt
-	secretKeyBytes, err := scrypt.Key([]byte(pass), salt, 1<<15, 8, 1, 32)
-	if err != nil {
-		panic(err)
-	}
-	var secretKey [32]byte
-	copy(secretKey[:], secretKeyBytes)
-	// encode it to hex
-	encodedKey := hex.EncodeToString(secretKeyBytes)
-	_ = encodedKey
 	// Random nonce
 	var nonce [24]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		panic(err)
 	}
-	encrypted := secretbox.Seal(nonce[:], plainText, &nonce, &secretKey)
+	return &EncryptedObject{kdfSalt: salt, encrNonce: nonce}
+}
+
+// encrypts byte slice with a pass
+func (e *EncryptedObject) Encrypt(plainText []byte, pass string) error {
+
+	// Derive key with scrypt
+	secretKeyBytes, err := scrypt.Key([]byte(pass), e.kdfSalt, 1<<15, 8, 1, 32)
+	if err != nil {
+		panic(err)
+	}
+	var secretKey [32]byte
+	copy(secretKey[:], secretKeyBytes)
+	// Random nonce
+	encrypted := secretbox.Seal(e.encrNonce[:], plainText, &e.encrNonce, &secretKey)
 	// Add the salt at the beginning of the message:
-	encrypted = append(salt, encrypted...)
-	return encrypted, nil
+	encrypted = append(e.kdfSalt, encrypted...)
+	e.cipherText = encrypted
+	return nil
+}
+
+// This function puts the KDF salt, encryption nonce and ciphertext all together
+func (e *EncryptedObject) PackMessage() error {
+}
+
+// Constructor that reads a file, parse
+func NewEncryptedObjectFromFile() {
 }
 
 // Decrypts a slice of bytes
@@ -64,8 +80,8 @@ func Decrypt(cipherText []byte, pass string) ([]byte, error) {
 	return decrypted, nil
 }
 
-// writes ciphertext to file
-func toFile(cipherText []byte, filename string, asText bool) error {
+// writes bytes to file
+func ToFile(info []byte, filename string) error {
 	if filename == "" {
 		panic("Cannot write to an empty path")
 	}
@@ -74,11 +90,8 @@ func toFile(cipherText []byte, filename string, asText bool) error {
 		panic(err)
 	}
 	defer f.Close()
-	var encoded string
-	if asText {
-		encoded = hex.EncodeToString(cipherText)
-		f.WriteString(encoded)
-	}
+	encoded := base64.StdEncoding.EncodeToString(info)
+	f.WriteString(encoded)
 	return nil
 
 }

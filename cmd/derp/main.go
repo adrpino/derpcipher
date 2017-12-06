@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -82,8 +83,16 @@ func (c *Config) Run() int {
 
 			// Register the subcommand flags in there, too.
 			cmd.Register(fs)
+
 			if printCmdUsage {
 				fs.Usage()
+				return 1
+			}
+			// Parse the flags the user gave us.
+			// flag package automatically prints usage and error message in err != nil
+			// or if '-h' flag provided
+			if err := fs.Parse(c.Args[2:]); err != nil {
+				panic(err)
 				return 1
 			}
 
@@ -94,7 +103,6 @@ func (c *Config) Run() int {
 
 		}
 	}
-
 	return 0
 }
 
@@ -128,7 +136,6 @@ func parseArgs(args []string) (cmdName string, printCmdUsage bool, exit bool) {
 
 // type that includes basic info of command
 type encryptCommand struct {
-	asText   bool
 	fromFile string
 	password string
 	toFile   string
@@ -145,7 +152,6 @@ func (cmd *encryptCommand) LongHelp() string  { return encryptLongHelp }
 
 // Register command-specific flags
 func (cmd *encryptCommand) Register(fs *flag.FlagSet) {
-	fs.BoolVar(&cmd.asText, "armor", true, "produce a text as output")
 	fs.StringVar(&cmd.fromFile, "f", "", "reads text from file")
 	fs.StringVar(&cmd.password, "p", "", "password")
 	fs.StringVar(&cmd.toFile, "o", "", "writes to file")
@@ -168,21 +174,26 @@ func (cmd *encryptCommand) Run(args []string) error {
 		}
 	}
 	// no password provided
+	var strPass string
 	if cmd.password == "" {
 		fmt.Print("Enter Password: ")
 		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
-		if err == nil {
-			fmt.Println("\nPassword typed: " + string(bytePassword))
-		}
-		cipherText, err := derp.Encrypt([]byte(text), string(bytePassword))
 		if err != nil {
 			return err
 		}
-		fmt.Println(string(cipherText))
+		strPass = string(bytePassword)
+	} else {
+		strPass = cmd.password
 	}
+	encr := derp.NewEncryptedObject()
+	err := encr.Encrypt([]byte(text), strPass)
+	if err != nil {
+		return err
+	}
+	out := base64.StdEncoding.EncodeToString(encr.CipherText())
+	fmt.Println("encrypted text", out)
 	if cmd.toFile != "" {
 		return errors.New("writing to file is not implemented")
 	}
 	return nil
-
 }
