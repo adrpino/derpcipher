@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"encoding/base64"
+	_ "encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -142,10 +142,10 @@ type encryptCommand struct {
 }
 
 func (cmd *encryptCommand) Name() string { return "cipher" }
-func (cmd *encryptCommand) Args() string { return "lol" }
+func (cmd *encryptCommand) Args() string { return "" }
 
 const encryptShortHelp = `Encrypts from files or stdin.`
-const encryptLongHelp = `Someday I'll write this.`
+const encryptLongHelp = ""
 
 func (cmd *encryptCommand) ShortHelp() string { return encryptShortHelp }
 func (cmd *encryptCommand) LongHelp() string  { return encryptLongHelp }
@@ -176,7 +176,7 @@ func (cmd *encryptCommand) Run(args []string) error {
 	// no password provided
 	var strPass string
 	if cmd.password == "" {
-		fmt.Print("Enter Password: ")
+		fmt.Print("Enter Password: \n")
 		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
 		if err != nil {
 			return err
@@ -190,10 +190,36 @@ func (cmd *encryptCommand) Run(args []string) error {
 	if err != nil {
 		return err
 	}
-	out := base64.StdEncoding.EncodeToString(encr.CipherText())
-	fmt.Println("encrypted text", out)
+	packed := encr.PackMessage()
+	fmt.Println("packed message", packed)
+	//TODO MOVE THIS TO decipher
+	unp, _ := derp.UnpackMessage(packed)
+	fmt.Println(unp)
+	res, err := encr.Decrypt(strPass)
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println(string(res))
 	if cmd.toFile != "" {
 		return errors.New("writing to file is not implemented")
 	}
 	return nil
+}
+
+// decryption command
+type decryptCommand struct {
+	fromFile string
+	password string
+	toFile   string
+}
+
+func (cmd *decryptCommand) Name() string { return "decipher" }
+func (cmd *decryptCommand) Args() string { return "" }
+
+const decryptShortHelp = `Decrypts from files or stdin.`
+const decryptLongHelp = ""
+
+func (cmd *decryptCommand) Register(fs *flag.FlagSet) {
+	fs.StringVar(&cmd.fromFile, "f", "", "reads text from file")
+	fs.StringVar(&cmd.password, "p", "", "password")
 }

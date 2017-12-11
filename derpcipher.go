@@ -3,6 +3,8 @@ package derpcipher
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/scrypt"
 	"io"
@@ -10,9 +12,15 @@ import (
 )
 
 type EncryptedObject struct {
-	kdfSalt    []byte
+	kdfSalt    [8]byte
 	encrNonce  [24]byte
 	cipherText []byte
+}
+
+func (e EncryptedObject) String() string {
+	return fmt.Sprintf("salt: %v, nonce: %v \nciphertext: %v\n",
+		e.kdfSalt, e.encrNonce, base64.StdEncoding.EncodeToString(e.cipherText))
+
 }
 
 func (e *EncryptedObject) CipherText() []byte {
@@ -21,7 +29,7 @@ func (e *EncryptedObject) CipherText() []byte {
 
 func NewEncryptedObject() *EncryptedObject {
 	// Generate random salt for KDF
-	var salt = make([]byte, 8)
+	var salt [8]byte
 	if _, err := io.ReadFull(rand.Reader, salt[:]); err != nil {
 		panic(err)
 	}
@@ -37,46 +45,63 @@ func NewEncryptedObject() *EncryptedObject {
 func (e *EncryptedObject) Encrypt(plainText []byte, pass string) error {
 
 	// Derive key with scrypt
-	secretKeyBytes, err := scrypt.Key([]byte(pass), e.kdfSalt, 1<<15, 8, 1, 32)
+	var salt [8]byte
+	copy(salt[:], e.kdfSalt[:])
+	secretKeyBytes, err := scrypt.Key([]byte(pass), salt[:], 1<<15, 8, 1, 32)
 	if err != nil {
 		panic(err)
 	}
 	var secretKey [32]byte
 	copy(secretKey[:], secretKeyBytes)
-	// Random nonce
-	encrypted := secretbox.Seal(e.encrNonce[:], plainText, &e.encrNonce, &secretKey)
+	encrypted := secretbox.Seal(nil, plainText, &e.encrNonce, &secretKey)
 	// Add the salt at the beginning of the message:
-	encrypted = append(e.kdfSalt, encrypted...)
+	//	encrypted = append(e.kdfSalt, encrypted...)
 	e.cipherText = encrypted
 	return nil
 }
 
 // This function puts the KDF salt, encryption nonce and ciphertext all together
-func (e *EncryptedObject) PackMessage() error {
+func (e *EncryptedObject) PackMessage() []byte {
+	packedMsg := append(e.kdfSalt[:], e.encrNonce[:]...)
+	packedMsg = append(packedMsg, e.cipherText...)
+	return packedMsg
+}
+
+// Unpack a byte slice into an encrypted Object.
+// TODO add delimiters between
+func UnpackMessage(packed []byte) (*EncryptedObject, error) {
+	// The packed object is not long enough
+	if len(packed) < 8+24 {
+		return nil, errors.New("packed object is not long enough")
+	}
+	obj := &EncryptedObject{}
+
+	kdfSalt := packed[:8]
+	encrNonce := packed[8:(8 + 24)]
+	copy(obj.kdfSalt[:], kdfSalt)
+	copy(obj.encrNonce[:], encrNonce)
+	obj.cipherText = packed[(8 + 24):]
+	return obj, nil
 }
 
 // Constructor that reads a file, parse
 func NewEncryptedObjectFromFile() {
 }
 
-// Decrypts a slice of bytes
-func Decrypt(cipherText []byte, pass string) ([]byte, error) {
+// Decrypts an EncryptedObject
+func (e *EncryptedObject) Decrypt(pass string) ([]byte, error) {
 	// First 8 bytes of cyphertext is salt
-	var msgSalt = make([]byte, 8)
-	copy(msgSalt[:], cipherText[:8])
-	secretKeyBytes, err := scrypt.Key([]byte(pass), msgSalt, 1<<15, 8, 1, 32)
+	secretKeyBytes, err := scrypt.Key([]byte(pass), e.kdfSalt[:], 1<<15, 8, 1, 32)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	var secretKey [32]byte
 	copy(secretKey[:], secretKeyBytes)
-	var decryptNonce [24]byte
-	// First 24 following is nonce
-	copy(decryptNonce[:], cipherText[8:(8+24)])
-	decrypted, ok := secretbox.Open(nil, cipherText[(8+24):], &decryptNonce, &secretKey)
+	decrypted, ok := secretbox.Open(nil, e.cipherText, &e.encrNonce, &secretKey)
 	if !ok {
-		panic("decryption error")
+		return nil, errors.New("decryption error")
 	}
+	fmt.Println(string(decrypted))
 	return decrypted, nil
 }
 
