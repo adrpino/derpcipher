@@ -84,6 +84,21 @@ func UnpackMessage(packed []byte) (*EncryptedObject, error) {
 	return obj, nil
 }
 
+func (e *EncryptedObject) WriteToFile(path string) error {
+	if path == "" {
+		panic("Cannot write to an empty path")
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	encoded := base64.StdEncoding.EncodeToString(e.cipherText)
+	f.WriteString(encoded)
+	return nil
+
+}
+
 // Constructor that reads a file, parse
 func NewEncryptedObjectFromFile() {
 }
@@ -103,20 +118,4 @@ func (e *EncryptedObject) Decrypt(pass string) ([]byte, error) {
 	}
 	fmt.Println(string(decrypted))
 	return decrypted, nil
-}
-
-// writes bytes to file
-func ToFile(info []byte, filename string) error {
-	if filename == "" {
-		panic("Cannot write to an empty path")
-	}
-	f, err := os.Create(filename)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	encoded := base64.StdEncoding.EncodeToString(info)
-	f.WriteString(encoded)
-	return nil
-
 }

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	_ "encoding/base64"
-	"errors"
 	"flag"
 	"fmt"
 	derp "github.com/adrpino/derpcipher"
@@ -138,7 +136,7 @@ func parseArgs(args []string) (cmdName string, printCmdUsage bool, exit bool) {
 type encryptCommand struct {
 	fromFile string
 	password string
-	toFile   string
+	outFile  string
 }
 
 func (cmd *encryptCommand) Name() string { return "cipher" }
@@ -154,7 +152,7 @@ func (cmd *encryptCommand) LongHelp() string  { return encryptLongHelp }
 func (cmd *encryptCommand) Register(fs *flag.FlagSet) {
 	fs.StringVar(&cmd.fromFile, "f", "", "reads text from file")
 	fs.StringVar(&cmd.password, "p", "", "password")
-	fs.StringVar(&cmd.toFile, "o", "", "writes to file")
+	fs.StringVar(&cmd.outFile, "o", "", "writes to file")
 }
 
 func (cmd *encryptCommand) Run(args []string) error {
@@ -190,18 +188,23 @@ func (cmd *encryptCommand) Run(args []string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("file", cmd.outFile)
+	if cmd.outFile != "" {
+		err = encr.WriteToFile(cmd.outFile)
+		if err != nil {
+			return err
+		}
+	}
+
 	packed := encr.PackMessage()
 	fmt.Println("packed message", packed)
 	//TODO MOVE THIS TO decipher
 	unp, _ := derp.UnpackMessage(packed)
-	fmt.Println(unp)
+	_ = unp
 	res, err := encr.Decrypt(strPass)
+	_ = res
 	if err != nil {
 		panic(err.Error())
-	}
-	fmt.Println(string(res))
-	if cmd.toFile != "" {
-		return errors.New("writing to file is not implemented")
 	}
 	return nil
 }
@@ -210,7 +213,7 @@ func (cmd *encryptCommand) Run(args []string) error {
 type decryptCommand struct {
 	fromFile string
 	password string
-	toFile   string
+	outFile  string
 }
 
 func (cmd *decryptCommand) Name() string { return "decipher" }
@@ -222,4 +225,11 @@ const decryptLongHelp = ""
 func (cmd *decryptCommand) Register(fs *flag.FlagSet) {
 	fs.StringVar(&cmd.fromFile, "f", "", "reads text from file")
 	fs.StringVar(&cmd.password, "p", "", "password")
+}
+
+func (cmd *encryptCommand) Run(args []string) error {
+	if len(args) > 2 {
+		return fmt.Errorf("too many args (%d)", len(args))
+	}
+	fmt.Println("I'm running a decrypt command")
 }
